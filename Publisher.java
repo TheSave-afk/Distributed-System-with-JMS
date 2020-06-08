@@ -1,4 +1,5 @@
 
+import javax.jms.Destination;
 import javax.jms.JMSException;
 import javax.jms.Message;
 import javax.jms.MessageConsumer;
@@ -19,23 +20,26 @@ import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.broker.BrokerFactory;
 import org.apache.activemq.broker.BrokerService;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
 
-public class Publisher implements MessageListener
+public class Publisher 
 {
   private static final String BROKER_URL   = "tcp://localhost:61616";
   private static final String TOPIC_NAME   = "topic";
 
   private String ID;
+  private int server_to_reply;
   
   //quorum
   private static final int Vr = 1;
-  private static final int Vw = 3;
-  private static final int V = 4;
+  private static final int Vw = 4;
+  private static final int V  = 4;
   
   //tipo di richiesta
-  private int MessageType; // se 1 read se 0 write
+  private int requestType; // se 1 read se 0 write
   
   //code dei messaggi
   private ActiveMQConnection connection;
@@ -59,7 +63,7 @@ public class Publisher implements MessageListener
 	  QUEUE_NAME += id;
   }
 
-  
+  /*
   @Override
 	public void onMessage(final Message m)
 	{
@@ -86,115 +90,167 @@ public class Publisher implements MessageListener
 	    }
 	  }
 	}
-  
+  */
   
   public void run()
   {
 	  try {
-		  ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory(Publisher.BROKER_URL);
-	      connection = (ActiveMQConnection) cf.createConnection();
-	      connection.start();
-
-	      //configurazione per il TOPIC
-	      topicSession = connection.createTopicSession(false, Session.AUTO_ACKNOWLEDGE);
-	      topic = topicSession.createTopic(TOPIC_NAME);
-	      publisher = topicSession.createPublisher(topic);
-	      
-	      //configurazione per la QUEUE
-	      queueSession = connection.createQueueSession(false, Session.AUTO_ACKNOWLEDGE);
-	      tempQ = queueSession.createTemporaryQueue();
-	      consumer = queueSession.createConsumer(tempQ);
-	      consumer.setMessageListener(this);
-	      receiver = queueSession.createReceiver(tempQ);
-
-	      while(true)
-		  {
-			  //decide se vuole fare read o write
-			  Random rand = new Random();
-			  int choice = rand.nextInt(50);
-			  
-			  if(choice % 2 == 0) {
-				//read
-				MessageType = 1;
-			  }
-			  else {
-				//write
-				MessageType = 0;
-			  }
-			  // pubblica sul topic il suo messaggio
-			 publish();
-			 
-			 //contatori per il quorum
-			 int count_si = 0;
-			 
-			 //attende la risposta del server
-			 for(int i=0; i<V; i++)
-			 {
-				 String r = receive();
-				 if(r.equals("SI")) {
-					 count_si++;
-				 }
-			 }
-			 
-			 
-			 //controllo quorum
-			 if(MessageType == 0)
-			 {
-				//controllo quorum per la write 
-				 if(count_si >= Vw)
+		  
+			  ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory(Publisher.BROKER_URL);
+		      connection = (ActiveMQConnection) cf.createConnection();
+		      connection.start();
+	
+		      //configurazione per il TOPIC
+		      topicSession = connection.createTopicSession(false, Session.AUTO_ACKNOWLEDGE);
+		      topic = topicSession.createTopic(TOPIC_NAME);
+		      publisher = topicSession.createPublisher(topic);
+		      
+		      //configurazione per la QUEUE
+		      queueSession = connection.createQueueSession(false, Session.AUTO_ACKNOWLEDGE);
+		      tempQ = queueSession.createTemporaryQueue();
+		      consumer = queueSession.createConsumer(tempQ);
+		      //consumer.setMessageListener(this);
+		      receiver = queueSession.createReceiver(tempQ);
+	
+		      while(true)
+			  {
+				  //decide se vuole fare read o write
+				  Random rand = new Random();
+				  int choice = rand.nextInt(50);
+				  
+				  if(choice % 2 == 0) {
+					//read
+					requestType = 1;
+				  }
+				  else {
+					//write
+					requestType = 0;
+				  }
+				  // pubblica sul topic il suo messaggio
+				 publish(requestType,0);
+				 
+				 //contatori per il quorum
+				 int count_si = 0;
+				 
+				 //inizializzo la lista di server a false
+				 List<Boolean> serverlist = new ArrayList<Boolean>();
+				 for(int i=0;i<V;i++)
+					 serverlist.add(false);
+				 
+				 //attende la risposta del server
+				 for(int i=0; i<V; i++)
 				 {
-					 //eseguo la write simulando un tempo casuale
-					 int computation_time = rand.nextInt(2000);
-					 Thread.sleep(computation_time);
+					 Message r = receive();
+					 int id = r.getIntProperty("server_id");
+					 String m = ((TextMessage) r).getText();
+					 if(m.equals("SI")) {
+						 count_si++;
+						 serverlist.set(id, true);// a questa posizione ci sono i server che hanno risposto si  
+					 }
 					 
-					 //manda messaggio di release
+				 }
+				 				 
+				 //controllo quorum
+				 if(requestType == 0)
+				 {
+					//controllo quorum per la write 
+					 if(count_si >= Vw)
+					 {
+						 //eseguo la write simulando un tempo casuale
+						 int computation_time = rand.nextInt(2000);
+						 
+						 //lo comunico al server
+						 for(int i=0;i<V;i++)
+						 {
+							 if(serverlist.get(i))
+							 {
+								 server_to_reply = i;
+								 publish(requestType,2); //primo server disponibile metti la risorsa occupata
+								
+								 
+							 }
+								 
+						 }
+						 
+						 //uso la risorsa
+						 Thread.sleep(computation_time);
+						 //gli dico di liberare la risorsa
+						 publish(requestType,3);
+					 }
+					 else
+					 {
+						 System.out.println("Quorum per la write non raggiunto");
+						//FACCIO COMUNQUE UNA SLEEP prima di una nuova richiesta
+						 int computation_time = rand.nextInt(2000);
+						 Thread.sleep(computation_time);
+						 
+					 }
 				 }
 				 else
 				 {
-					 System.out.println("Quorum per la write non raggiunto");
-					//FACCIO COMUNQUE UNA SLEEP prima di una nuova richiesta
-					 int computation_time = rand.nextInt(2000);
-					 Thread.sleep(computation_time);
-					 
+					 //controllo qorum per la read
+					 if(count_si >= Vr)
+					 {
+						 //eseguo la read simulando un tempo casuale
+						 int computation_time = rand.nextInt(2000);
+						 Thread.sleep(computation_time);
+						 //manda messaggio di release
+						 publish(requestType,3);
+						 
+					 }
+					 else
+					 {
+						 System.out.println("Quorum per la read non raggiunto");
+						 //FACCIO COMUNQUE UNA SLEEP prima di una nuova richiesta
+						 int computation_time = rand.nextInt(2000);
+						 Thread.sleep(computation_time);
+					 }
 				 }
-			 }
-			 else
-			 {
-				 //controllo qorum per la read
-				 if(count_si >= Vr)
-				 {
-					 //eseguo la read simulando un tempo casuale
-					 int computation_time = rand.nextInt(2000);
-					 Thread.sleep(computation_time);
-					 
-					 //manda messaggio di release
-					 
-				 }
-				 else
-				 {
-					 System.out.println("Quorum per la read non raggiunto");
-					 //FACCIO COMUNQUE UNA SLEEP prima di una nuova richiesta
-					 int computation_time = rand.nextInt(2000);
-					 Thread.sleep(computation_time);
-				 }
-			 }
-		  }
+			  }
 	  }
 	  catch(Exception e) {
 		  e.printStackTrace();
 	  }
   }
   
-  public void publish()
+  public void publish(int requestType,int messageType)
   { 
     try
     {
       TextMessage message = topicSession.createTextMessage();
-      message.setText("Vediamo");
+      String text = " ";
+      
+      if(messageType == 0)
+      {
+    	  message.setIntProperty("type", 0);
+    	  if(requestType == 0)
+          {
+        	  //creo un messaggio di write
+        	  text = "I wanna write ";
+        	  message.setBooleanProperty("write", true);
+          }
+          else {
+        	  //creo un messaggio di read
+        	  text = "I wanna read ";
+        	  message.setBooleanProperty("write", false);
+          }
+      }
+      else if(messageType == 2)
+      {
+    	  message.setIntProperty("type", 2);
+    	  message.setIntProperty("server_id", server_to_reply);
+      }
+      else
+      {
+    	  message.setIntProperty("type", 3);
+    	  message.setIntProperty("server_id", server_to_reply);
+      }
+      
+      message.setText(text);
       message.setJMSReplyTo(tempQ);
       
       publisher.publish(message);
-      publisher.publish(topicSession.createMessage());
+      //publisher.publish(topicSession.createMessage());
     }
     catch (Exception e)
     {
@@ -202,29 +258,30 @@ public class Publisher implements MessageListener
     }
   }
 
-  public String receive()
+  public Message receive()
   {
+	 Message response = null;
+	  
 	 try {
-		  Message response = receiver.receive();
+		  response = receiver.receive();
+		  
 		  String r = ((TextMessage) response).getText();
+		  
 		  System.out.println("Message: " + r);
 		  
-		  return r;
+		  return response;
     }
     catch (Exception e)
     {
       e.printStackTrace();
     }
 	 
-	return "Agg sbagliat";
+	return response;
   }
-  
-  
   
   public static void main(final String[] args)
   {
 	  new Publisher(args[0]).run();
   }
 
-	
 }

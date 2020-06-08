@@ -2,6 +2,7 @@
 import javax.jms.JMSException;
 import javax.jms.Message;
 import javax.jms.MessageProducer;
+import javax.jms.Queue;
 import javax.jms.QueueSession;
 import javax.jms.Session;
 import javax.jms.TextMessage;
@@ -22,6 +23,9 @@ public class Subscriber
   private static final String BROKER_PROPS = "persistent=false&useJmx=false";
   private static final String TOPIC_NAME   = "topic";
   
+  private int ID;
+  private Boolean resourceOccupied = false;
+  
   private BrokerService broker;
   private ActiveMQConnectionFactory cf;
   private TopicSession topicSession;
@@ -31,6 +35,13 @@ public class Subscriber
   private QueueSession queueSession;
   private MessageProducer producer;
   
+  
+  public Subscriber(String id)
+  {
+	  ID = Integer.parseInt(id);
+  }
+
+  
   public void run()
   {
 	  try {
@@ -39,7 +50,7 @@ public class Subscriber
 				    broker.start();
 			  }
 			  catch(Exception e) {
-				  e.printStackTrace();
+				  System.out.println("Broker già creato");
 			  }
 	
 		      cf = new ActiveMQConnectionFactory(Subscriber.BROKER_URL);
@@ -55,7 +66,7 @@ public class Subscriber
 		      
 		      while(true)
 		      {
-		    	//TODO 
+		    	receive(); 
 		      }
 		  }
 	  catch(Exception e) {
@@ -71,25 +82,37 @@ public class Subscriber
 
         if (message instanceof TextMessage)
         {
-          System.out.println("Message: " + ((TextMessage) message).getText());
-
-          TextMessage reply = queueSession.createTextMessage();//riposta p2p
+          if(message.getIntProperty("type") == 2)
+		  {
+        	  //ho ricevuto un messaggio che mi dice che devo occupare la risorsa
+        	  int id = message.getIntProperty("server_id");
+        	  if(id == ID)
+        		  resourceOccupied = true;
+        	    
+		  }
           
-          String text;
-          Boolean resourceOccupied = false;
-          
-          if(!resourceOccupied)
+          if(message.getIntProperty("type") == 3)
           {
-        	  text = "SI";
+        	  //ho ricevuto un messaggio di liberare la risorsa
+        	  int id = message.getIntProperty("server_id");
+        	  if(id == ID)
+        		  resourceOccupied = false;	    
           }
           else {
-        	  text = "NO";
+        	   System.out.println("Message: " + ((TextMessage) message).getText());
+               TextMessage reply = queueSession.createTextMessage();//riposta p2p
+               String text;  
+               
+               if(!resourceOccupied)
+             	  text = "SI";
+               else 
+             	  text = "NO";
+               
+               reply.setText(text);
+               reply.setIntProperty("server_id", ID);
+               producer.send(message.getJMSReplyTo(), reply);  	  
           }
-          
-          reply.setText(text);
-          producer.send(message.getJMSReplyTo(), reply);
-        }        
-      
+        }  
     }
     catch (Exception e)
     {
@@ -100,6 +123,6 @@ public class Subscriber
 
   public static void main(final String[] args)
   {
-    new Subscriber().receive();
+	  new Subscriber(args[0]).run();
   }
 }
