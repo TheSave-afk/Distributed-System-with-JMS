@@ -108,7 +108,7 @@ public class Publisher
 		      //configurazione per la QUEUE
 		      queueSession = connection.createQueueSession(false, Session.AUTO_ACKNOWLEDGE);
 		      tempQ = queueSession.createTemporaryQueue();
-		      consumer = queueSession.createConsumer(tempQ);
+		      //consumer = queueSession.createConsumer(tempQ); // NUOVA MODIFICA
 		      //consumer.setMessageListener(this);
 		      receiver = queueSession.createReceiver(tempQ);
 	
