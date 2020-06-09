@@ -140,14 +140,13 @@ public class Publisher
 				 //attende la risposta del server
 				 for(int i=0; i<V; i++)
 				 {
-					 Message r = receive();
+					 Message r = receive(1000);
 					 int id = r.getIntProperty("server_id");
 					 String m = ((TextMessage) r).getText();
 					 if(m.equals("SI")) {
 						 count_si++;
 						 serverlist.set(id, true);// a questa posizione ci sono i server che hanno risposto si  
 					 }
-					 
 				 }
 				 				 
 				 //controllo quorum
@@ -165,11 +164,8 @@ public class Publisher
 							 if(serverlist.get(i))
 							 {
 								 server_to_reply = i;
-								 publish(requestType,2); //primo server disponibile metti la risorsa occupata
-								
-								 
+								 publish(requestType,2); //primo server disponibile metti la risorsa occupata		 
 							 }
-								 
 						 }
 						 
 						 //uso la risorsa
@@ -258,12 +254,13 @@ public class Publisher
     }
   }
 
-  public Message receive()
+  public Message receive(int ritardo)
   {
-	 Message response = null;
+	 Message response;
 	  
 	 try {
-		  response = receiver.receive();
+		 
+		  response = receiver.receive(ritardo);
 		  
 		  String r = ((TextMessage) response).getText();
 		  
@@ -276,6 +273,8 @@ public class Publisher
       e.printStackTrace();
     }
 	 
+	System.out.println("boh");
+	response = null;
 	return response;
   }
   

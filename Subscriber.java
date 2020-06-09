@@ -71,8 +71,7 @@ public class Subscriber
 		  }
 	  catch(Exception e) {
 		  e.printStackTrace();
-	  }
-	  
+	  }  
   }
   public void receive()
   {
@@ -87,8 +86,10 @@ public class Subscriber
         	  //ho ricevuto un messaggio che mi dice che devo occupare la risorsa
         	  int id = message.getIntProperty("server_id");
         	  if(id == ID)
+        	  {
         		  resourceOccupied = true;
-        	    
+            	  System.out.println("La mia risorsa è occupata adesso");
+        	  }       	    
 		  }
           
           if(message.getIntProperty("type") == 3)
@@ -96,7 +97,10 @@ public class Subscriber
         	  //ho ricevuto un messaggio di liberare la risorsa
         	  int id = message.getIntProperty("server_id");
         	  if(id == ID)
-        		  resourceOccupied = false;	    
+        	  {
+        		  resourceOccupied = false;	
+            	  System.out.println("La mia risorsa è libera adesso");
+        	  }     		  
           }
           else {
         	   System.out.println("Message: " + ((TextMessage) message).getText());
@@ -110,8 +114,12 @@ public class Subscriber
                
                reply.setText(text);
                reply.setIntProperty("server_id", ID);
+               
+               //Thread.sleep(2000*ID);//debug?
+               System.out.println("sto mandando la mia risposta" + text);
                producer.send(message.getJMSReplyTo(), reply);  	  
-          }
+               System.out.println("mandato");
+          }  
         }  
     }
     catch (Exception e)
