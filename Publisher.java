@@ -1,11 +1,6 @@
 
-import javax.jms.Destination;
-import javax.jms.JMSException;
 import javax.jms.Message;
-import javax.jms.MessageConsumer;
-import javax.jms.MessageListener;
-import javax.jms.MessageProducer;
-import javax.jms.Queue;
+
 import javax.jms.QueueReceiver;
 import javax.jms.QueueSession;
 import javax.jms.Session;
@@ -17,11 +12,7 @@ import javax.jms.TopicSession;
 
 import org.apache.activemq.ActiveMQConnection;
 import org.apache.activemq.ActiveMQConnectionFactory;
-import org.apache.activemq.broker.BrokerFactory;
-import org.apache.activemq.broker.BrokerService;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
 
 
@@ -31,24 +22,23 @@ public class Publisher
   private static final String TOPIC_NAME   = "topic";
 
   private String ID;
-  private int server_to_reply;
+
   
   //quorum
   private static final int Vr = 1;
-  private static final int Vw = 4;
+  private static final int Vw = 3;
   private static final int V  = 4;
   
   //tipo di richiesta
   private int requestType; // se 1 read se 0 write
+  private static final int REQUEST = 0;
+  private static final int USE = 1;
+  private static final int RELEASE = 2;
   
   //code dei messaggi
   private ActiveMQConnection connection;
-  private static final String BROKER_PROPS = "persistent=false&useJmx=false";
-  private  String QUEUE_NAME = "client";
   private QueueSession queueSession;
   private TemporaryQueue tempQ;
-  private MessageConsumer consumer;
-  
   private QueueReceiver receiver;
   
   //topic
@@ -56,42 +46,13 @@ public class Publisher
   private TopicPublisher publisher;
   private Topic topic;
   
+ 
   
   public Publisher(String id)
   {
 	  ID = id;
-	  QUEUE_NAME += id;
   }
 
-  /*
-  @Override
-	public void onMessage(final Message m)
-	{
-	  if (m instanceof TextMessage)
-	  {
-	    try
-	    {
-	      System.out.println("Message: " + ((TextMessage) m).getText());
-	    }
-	    catch (JMSException e)
-	    {
-	      e.printStackTrace();
-	    }
-	  }
-	  else if (connection != null)
-	  {
-	    try
-	    {
-	      connection.close();
-	    }
-	    catch (JMSException e)
-	    {
-	      e.printStackTrace();
-	    }
-	  }
-	}
-  */
-  
   public void run()
   {
 	  try {
@@ -108,8 +69,6 @@ public class Publisher
 		      //configurazione per la QUEUE
 		      queueSession = connection.createQueueSession(false, Session.AUTO_ACKNOWLEDGE);
 		      tempQ = queueSession.createTemporaryQueue();
-		      //consumer = queueSession.createConsumer(tempQ); // NUOVA MODIFICA
-		      //consumer.setMessageListener(this);
 		      receiver = queueSession.createReceiver(tempQ);
 	
 		      while(true)
@@ -118,90 +77,62 @@ public class Publisher
 				  Random rand = new Random();
 				  int choice = rand.nextInt(50);
 				  
-				  if(choice % 2 == 0) {
-					//read
+				  if(choice % 2 == 0)
 					requestType = 1;
-				  }
-				  else {
-					//write
+				  else
 					requestType = 0;
-				  }
-				  // pubblica sul topic il suo messaggio
-				 publish(requestType,0);
+				  
+				 publish(requestType,REQUEST);
 				 
-				 //contatori per il quorum
+				 //contatore per il quorum
 				 int count_si = 0;
+				 int quorum;
 				 
-				 //inizializzo la lista di server a false
-				 List<Boolean> serverlist = new ArrayList<Boolean>();
-				 for(int i=0;i<V;i++)
-					 serverlist.add(false);
-				 
-				 //attende la risposta del server
-				 for(int i=0; i<V; i++)
+				 //attende la risposta dei server
+				 for(int i = 0; i < V; i++)
 				 {
-					 Message r = receive(1000);
-					 int id = r.getIntProperty("server_id");
+					 Message r = receive();
 					 String m = ((TextMessage) r).getText();
-					 if(m.equals("SI")) {
+					 if(m.equals("SI")) 
 						 count_si++;
-						 serverlist.set(id, true);// a questa posizione ci sono i server che hanno risposto si  
-					 }
-				 }
-				 				 
+				 }		
+				 
 				 //controllo quorum
-				 if(requestType == 0)
+				 String log = "";
+				 int computation_time;
+				 
+				 if (requestType == 0)
 				 {
-					//controllo quorum per la write 
-					 if(count_si >= Vw)
-					 {
-						 //eseguo la write simulando un tempo casuale
-						 int computation_time = rand.nextInt(2000);
-						 
-						 //lo comunico al server
-						 for(int i=0;i<V;i++)
-						 {
-							 if(serverlist.get(i))
-							 {
-								 server_to_reply = i;
-								 publish(requestType,2); //primo server disponibile metti la risorsa occupata		 
-							 }
-						 }
-						 
-						 //uso la risorsa
-						 Thread.sleep(computation_time);
-						 //gli dico di liberare la risorsa
-						 publish(requestType,3);
-					 }
-					 else
-					 {
-						 System.out.println("Quorum per la write non raggiunto");
-						//FACCIO COMUNQUE UNA SLEEP prima di una nuova richiesta
-						 int computation_time = rand.nextInt(2000);
-						 Thread.sleep(computation_time);
-						 
-					 }
+					 quorum = Vw;
+					 log = "sto scrivendo";
+					 computation_time = 6000;
 				 }
 				 else
 				 {
-					 //controllo qorum per la read
-					 if(count_si >= Vr)
-					 {
-						 //eseguo la read simulando un tempo casuale
-						 int computation_time = rand.nextInt(2000);
-						 Thread.sleep(computation_time);
-						 //manda messaggio di release
-						 publish(requestType,3);
-						 
-					 }
-					 else
-					 {
-						 System.out.println("Quorum per la read non raggiunto");
-						 //FACCIO COMUNQUE UNA SLEEP prima di una nuova richiesta
-						 int computation_time = rand.nextInt(2000);
-						 Thread.sleep(computation_time);
-					 }
+					 quorum = Vr;
+					 log = "sto leggendo";
+					 computation_time = 3000;
 				 }
+				 
+				 if (count_si > quorum) // quorum raggiunto (R o W)
+				 {
+					 publish(requestType,USE); //primo server disponibile metti la risorsa occupata
+					 
+					 System.out.println(log);
+					 
+					 //uso la risorsa
+					 Thread.sleep(computation_time);
+					 
+					 //gli dico di liberare la risorsa
+					 publish(requestType,RELEASE);
+				 }
+				 
+				 else // quorum non raggiunto
+				 {
+					 System.out.println("Quorum non raggiunto");
+					 Thread.sleep(1000 + rand.nextInt(2000));	// sleep prima di una nuova richiesta
+				 }
+
 			  }
 	  }
 	  catch(Exception e) {
@@ -215,38 +146,20 @@ public class Publisher
     {
       TextMessage message = topicSession.createTextMessage();
       String text = " ";
+      message.setStringProperty("clientID", ID);
+      message.setIntProperty("type", messageType);
       
-      if(messageType == 0)
+      if(messageType == REQUEST)
       {
-    	  message.setIntProperty("type", 0);
     	  if(requestType == 0)
-          {
-        	  //creo un messaggio di write
-        	  text = "I wanna write ";
-        	  message.setBooleanProperty("write", true);
-          }
-          else {
-        	  //creo un messaggio di read
-        	  text = "I wanna read ";
-        	  message.setBooleanProperty("write", false);
-          }
-      }
-      else if(messageType == 2)
-      {
-    	  message.setIntProperty("type", 2);
-    	  message.setIntProperty("server_id", server_to_reply);
-      }
-      else
-      {
-    	  message.setIntProperty("type", 3);
-    	  message.setIntProperty("server_id", server_to_reply);
+        	  text = "voglio scrivere";
+          else
+        	  text = "voglio leggere";
       }
       
       message.setText(text);
-      message.setJMSReplyTo(tempQ);
-      
+      message.setJMSReplyTo(tempQ);  
       publisher.publish(message);
-      //publisher.publish(topicSession.createMessage());
     }
     catch (Exception e)
     {
@@ -254,17 +167,17 @@ public class Publisher
     }
   }
 
-  public Message receive(int ritardo)
+  public Message receive()
   {
 	 Message response;
 	  
 	 try {
 		 
-		  response = receiver.receive(ritardo);
+		  response = receiver.receive();
 		  
 		  String r = ((TextMessage) response).getText();
 		  
-		  System.out.println("Message: " + r);
+		  System.out.println("Messaggio: " + r);
 		  
 		  return response;
     }
@@ -273,7 +186,6 @@ public class Publisher
       e.printStackTrace();
     }
 	 
-	System.out.println("boh");
 	response = null;
 	return response;
   }
