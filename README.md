@@ -6,6 +6,6 @@ The execution of the read and write operations is simulated by simply waiting fo
 Clients that do not reach the necessary quorum need to wait for a random time before resubmitting the request.
 
 For execution on Eclipse:
-1. Create different configurations of Subscriber class
-2. Every subscriber configuration must have as parameter the ID (ex. 1,2,3,...)
-3. Do the same with the publisher class ( at the moment only one configuration is required)
+1. Create different configurations of Publisher class
+2. Every Publicher configuration must have as parameter the ID (ex. 1,2,3,...)
+
