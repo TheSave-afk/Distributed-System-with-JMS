@@ -7,5 +7,5 @@ Clients that do not reach the necessary quorum need to wait for a random time be
 
 For execution on Eclipse:
 1. Create different configurations of Publisher class
-2. Every Publicher configuration must have as parameter the ID (ex. 1,2,3,...)
+2. Every Publisher configuration must have as parameter the ID (ex. 1,2,3,...)
 
